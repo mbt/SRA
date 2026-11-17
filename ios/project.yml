@@ -1,0 +1,68 @@
+# XcodeGen project for SecureRemoteAgent iOS app.
+# Generate with: `xcodegen generate` (brew install xcodegen)
+# Requires Xcode 16+, iOS 17+, Swift 6 mode.
+
+name: SecureRemoteAgent
+options:
+  bundleIdPrefix: com.secureremote
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  Citadel:
+    url: https://github.com/orlandos-nl/Citadel
+    version: 0.9.3
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    version: 1.5.3
+
+targets:
+  SecureRemoteAgent:
+    type: application
+    platform: iOS
+    sources:
+      - path: SecureRemoteAgent
+        excludes:
+          - "**/*.md"
+    info:
+      path: SecureRemoteAgent/Info.plist
+      properties:
+        CFBundleDisplayName: Secure Remote Agent
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSBonjourServices: ["_ssh._tcp"]
+        NSLocalNetworkUsageDescription: Connect to your computers over SSH on the local network.
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        PRODUCT_BUNDLE_IDENTIFIER: com.secureremote.agent
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        ENABLE_USER_SCRIPT_SANDBOXING: true
+    dependencies:
+      - package: Citadel
+        product: Citadel
+      - package: SwiftTerm
+        product: SwiftTerm
+    resources:
+      # Harness binaries built by scripts/build-harness.sh are copied here.
+      # Add generated files to this group before archiving:
+      #   Harnesses/harness-darwin-arm64
+      #   Harnesses/harness-darwin-x64
+      #   Harnesses/harness-linux-x64
+      #   Harnesses/harness-linux-arm64
+      - path: SecureRemoteAgent/Resources/Harnesses
+        buildPhase: resources
+
+  SecureRemoteAgentTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SecureRemoteAgentTests
+    dependencies:
+      - target: SecureRemoteAgent

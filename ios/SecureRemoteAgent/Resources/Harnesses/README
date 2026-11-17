@@ -1,0 +1,1 @@
+Built harness binaries (dist/harness-*) are copied here before archiving. See scripts/build-harness.sh.

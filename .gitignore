@@ -1,0 +1,31 @@
+# ---> Swift / Xcode
+build/
+*.xcodeproj/*.xcworkspace
+*.xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# xcodegen output (regenerate with `xcodegen generate`)
+ios/SecureRemoteAgent.xcodeproj/
+
+# ---> Zig
+harness/zig-out/
+harness/.zig-cache/
+zig-cache/
+
+# ---> Harness binaries (built, then copied into ios resources)
+dist/
+ios/SecureRemoteAgent/Resources/Harnesses/harness-*
+
+# ---> macOS / editors
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# ---> Secrets — never commit
+*.pem
+*.key
+hosts.json
