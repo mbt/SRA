@@ -25,8 +25,11 @@ final class SessionManager {
     }
 
     var sessions: [ActiveSession] = []
-    var connection: SSHConnectionManager?
-    var acp: ACPClient?
+    /// Live transport + ACP client per session, keyed by `ActiveSession.id`.
+    /// A second connect never clobbers the first — each session owns its
+    /// SSH connection and harness channel for its whole lifetime.
+    private var connections: [UUID: SSHConnectionManager] = [:]
+    private var clients: [UUID: ACPClient] = [:]
 
     func startSession(to host: HostProfile, hostStore: HostStore? = nil, password: String? = nil) async {
         let s = ActiveSession(id: UUID(), host: host, acpSessionId: nil, messages: [], state: .connecting)
@@ -35,7 +38,7 @@ final class SessionManager {
 
         do {
             let conn = SSHConnectionManager()
-            self.connection = conn
+            connections[s.id] = conn
             let connected = try await conn.connect(host: host, password: password)
             sessions[idx].state = .deploying
 
@@ -47,20 +50,31 @@ final class SessionManager {
 
             sessions[idx].state = .ready
             let client = ACPClient(connection: conn)
-            self.acp = client
+            clients[s.id] = client
             try await client.start(remoteHarnessPath: deployer.remotePath(for: arch))
             let sid = try await client.newSession()
             sessions[idx].acpSessionId = sid
             sessions[idx].messages.append(AgentMessage(id: UUID(), role: .system, text: "Connected to \(host.name) (\(arch.rawValue)) · session \(sid)", isStreaming: false))
         } catch {
+            connections.removeValue(forKey: s.id)
+            clients.removeValue(forKey: s.id)
             sessions[idx].state = .failed(error.localizedDescription)
         }
+    }
+
+    /// Tear down a session: close its SSH connection and drop its state.
+    func disconnect(_ id: UUID) async {
+        if let conn = connections.removeValue(forKey: id) {
+            await conn.disconnect()
+        }
+        clients.removeValue(forKey: id)
+        sessions.removeAll { $0.id == id }
     }
 
     func sendPrompt(_ text: String, in sessionId: UUID) async {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }),
               let sid = sessions[idx].acpSessionId,
-              let acp
+              let acp = clients[sessionId]
         else { return }
         sessions[idx].messages.append(AgentMessage(id: UUID(), role: .user, text: text, isStreaming: false))
         let streamId = UUID()

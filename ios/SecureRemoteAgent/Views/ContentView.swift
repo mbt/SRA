@@ -32,6 +32,11 @@ private struct SessionsView: View {
             NavigationLink(session.host.name) {
                 SessionView(sessionId: session.id)
             }
+            .swipeActions {
+                Button("Disconnect", role: .destructive) {
+                    Task { await manager.disconnect(session.id) }
+                }
+            }
         }
         .navigationTitle("Sessions")
         .overlay {

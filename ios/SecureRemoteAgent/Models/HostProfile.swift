@@ -16,8 +16,16 @@ struct HostProfile: Identifiable, Codable, Hashable, Sendable {
     var pinnedHostKey: String?
     var lastKnownArch: RemoteArch?
 
-    enum AuthKind: String, Codable, Sendable {
+    enum AuthKind: String, Codable, Sendable, CaseIterable {
         case ed25519, ecdsa, password
+
+        var displayName: String {
+            switch self {
+            case .ed25519: return "Ed25519 key"
+            case .ecdsa: return "ECDSA key (P-256)"
+            case .password: return "Password"
+            }
+        }
     }
 }
 
