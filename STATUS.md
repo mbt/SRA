@@ -1,6 +1,6 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 6 commits, HEAD `0bb96af`).
+Date: 2026-11-21. Branch: `main` (clean, 8 commits, HEAD `ad54836`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -56,9 +56,16 @@ Known green: app builds + tests clean for simulator (Citadel 0.9.2,
 SwiftTerm 1.99.3). TOFU + Keychain verified by unit tests + typecheck only —
 live-host proof deferred to step 7.
 
+- **Step 5 ACPClient hardening** (`ad54836`): `initialize` validated
+  fail-fast (version must be 1, auth-gated remotes rejected);
+  `stop()` + listen-loop `defer` resume all waiters with `.disconnected`;
+  `cancel(sessionId:)` sends `$/cancel_request` with request-id correlation
+  (non-throwing); `start(channel:)` seam + 6 scripted-channel tests —
+  18/18 green. `docs/ACP_NOTES.md` updated.
+
 ## 3. Working list to conclusion (do in order)
 
-### 5. ACPClient hardening (next up)
+### 6. HarnessDeployer skip-upload + version hygiene (next up)
 File: `ios/SecureRemoteAgent/Services/ACPClient.swift`.
 - Validate `initialize` result (`protocolVersion`, capabilities/auth) instead
   of `_ = result`; surface mismatch as `ACPError.protocolViolation`.
