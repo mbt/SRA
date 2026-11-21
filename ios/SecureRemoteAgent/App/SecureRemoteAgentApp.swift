@@ -6,12 +6,14 @@ import SwiftUI
 struct SecureRemoteAgentApp: App {
     @State private var store = HostStore()
     @State private var sessionManager = SessionManager()
+    @State private var moshManager = MoshManager()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(store)
                 .environment(sessionManager)
+                .environment(moshManager)
         }
     }
 }

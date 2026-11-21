@@ -29,6 +29,15 @@ final class MoshManager {
         case probing
         case active(port: Int)
         case fallback(String)
+
+        var displayText: String {
+            switch self {
+            case .disabled: return "Off — SSH only"
+            case .probing: return "Probing…"
+            case .active(let port): return "Active (UDP \(port))"
+            case .fallback(let why): return "SSH fallback — \(why)"
+            }
+        }
     }
 
     /// Probe for `mosh-server` on the remote. Must be raced, never blocking.

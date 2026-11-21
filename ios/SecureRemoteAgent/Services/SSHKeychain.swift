@@ -64,6 +64,23 @@ enum SSHKeychain {
         return key
     }
 
+    /// All key tags stored under this service (for the Keys settings UI).
+    static func allTags() throws -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var items: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &items)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let list = items as? [[String: Any]] else {
+            throw KeychainError.loadFailed(status)
+        }
+        return list.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
+    }
+
     static func delete(tag: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
