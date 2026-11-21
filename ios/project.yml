@@ -71,3 +71,6 @@ targets:
       - path: SecureRemoteAgentTests
     dependencies:
       - target: SecureRemoteAgent
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
