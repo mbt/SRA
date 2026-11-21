@@ -1,17 +1,18 @@
+import CryptoKit
 import Foundation
 
 /// Uploads the correct prebuilt harness binary for the remote's OS/arch,
 /// then returns the remote path to execute.
 ///
 /// Flow:
-///   1. `uname -sm` over SSH -> RemoteArch
+///   1. `uname -sm` over SSH -> RemoteArch (skipped when `lastKnownArch`)
 ///   2. pick bundled resource `harness-<slug>` (built by scripts/build-harness.sh)
-///   3. SFTP to `~/.secure-remote-agent/harness-<slug>`, `chmod +x`
-///   4. cache arch on HostProfile so next connect skips detection
+///   3. compare local sha256 against the remote file; SFTP + `chmod +x`
+///      only on mismatch — repeat connects upload 0 bytes
+///   4. prune older `harness-<slug>-<version>` files on success
+///   5. cache arch on HostProfile so next connect skips detection
 ///
-/// Binaries are tiny by design (Zig ReleaseSmall, static musl on Linux),
-/// so re-upload on version mismatch is cheap — compare sha256 before
-/// upload in the production pass.
+/// Binaries are tiny by design (Zig ReleaseSmall, static musl on Linux).
 actor HarnessDeployer {
     static let remoteDir = "~/.secure-remote-agent"
     static let bundleVersion = "0.1.0" // bump with harness releases
@@ -39,7 +40,11 @@ actor HarnessDeployer {
     }
 
     func remotePath(for arch: RemoteArch) -> String {
-        "\(Self.remoteDir)/\(arch.harnessResourceName)-\(Self.bundleVersion)"
+        "\(Self.remoteDir)/\(Self.fileName(for: arch))"
+    }
+
+    static func fileName(for arch: RemoteArch) -> String {
+        "\(arch.harnessResourceName)-\(bundleVersion)"
     }
 
     private func uploadIfNeeded(arch: RemoteArch) async throws {
@@ -50,11 +55,51 @@ actor HarnessDeployer {
         ) else {
             throw DeployError.missingBundledBinary(arch.harnessResourceName)
         }
-        // TODO: picks: `sha256sum` remote check before upload to skip
-        // re-upload when versions match. Cheap anyway (<300 KiB).
+        let data = try Data(contentsOf: localURL)
         try await connection.capture("mkdir -p \(Self.remoteDir)")
-        try await connection.upload(localURL: localURL, remotePath: remotePath(for: arch))
-        try await connection.capture("chmod +x \(remotePath(for: arch))")
+        let path = remotePath(for: arch)
+        if try await remoteSHA256(path: path) != Self.sha256Hex(of: data) {
+            try await connection.upload(data: data, remotePath: path)
+            try await connection.capture("chmod +x \(path)")
+        }
+        try await pruneOldVersions(arch: arch)
+    }
+
+    /// Hex sha256 of the remote file, or nil when missing/unreadable.
+    /// `sha256sum` (Linux) with `shasum -a 256` (macOS) fallback — both
+    /// print `<hash>  <path>`. Connection errors also surface as nil; the
+    /// upload path then fails loudly on its own.
+    private func remoteSHA256(path: String) async -> String? {
+        let out = try? await connection.capture(
+            "sha256sum \(path) 2>/dev/null || shasum -a 256 \(path) 2>/dev/null")
+        let hash = out?.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            .first.map(String.init)
+        return (hash?.isEmpty == false) ? hash : nil
+    }
+
+    /// Delete `harness-<slug>-*` files other than the current version.
+    private func pruneOldVersions(arch: RemoteArch) async throws {
+        let current = Self.fileName(for: arch)
+        let listing = (try? await connection.capture("ls -1 \(Self.remoteDir)")) ?? ""
+        for stale in Self.staleEntries(lsOutput: listing, arch: arch, current: current) {
+            try await connection.capture("rm -f \(Self.remoteDir)/\(stale)")
+        }
+    }
+
+    /// Filenames in an `ls -1` listing that belong to `arch` but are not the
+    /// current version. Pure (unit-tested) — the only untrusted input is the
+    /// remote listing, and entries are matched against our own slug prefix.
+    static func staleEntries(lsOutput: String, arch: RemoteArch, current: String) -> [String] {
+        let prefix = "\(arch.harnessResourceName)-"
+        return lsOutput
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.hasPrefix(prefix) && $0 != current && !$0.contains("/") }
+    }
+
+    /// Lowercase hex SHA-256. Pure (unit-tested against NIST vector).
+    static func sha256Hex(of data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 

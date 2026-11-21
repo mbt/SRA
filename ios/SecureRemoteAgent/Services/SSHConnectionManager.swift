@@ -101,6 +101,12 @@ actor SSHConnectionManager {
 
     /// Upload a local harness binary to the remote path (SFTP).
     func upload(localURL: URL, remotePath: String) async throws {
+        let data = try Data(contentsOf: localURL)
+        try await upload(data: data, remotePath: remotePath)
+    }
+
+    /// Upload in-memory bytes to the remote path (SFTP).
+    func upload(data: Data, remotePath: String) async throws {
         guard let client = clientBox.client else { throw SSHError.notConnected }
         // SFTP has no tilde expansion: a leading "~/" is rewritten to a
         // home-relative path (sftp-server resolves relative paths from the
@@ -112,7 +118,6 @@ actor SSHConnectionManager {
         } else {
             sftpPath = remotePath
         }
-        let data = try Data(contentsOf: localURL)
         do {
             try await client.withSFTP { sftp in
                 try await sftp.withFile(
