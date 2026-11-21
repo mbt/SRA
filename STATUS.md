@@ -1,6 +1,6 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 4 commits, HEAD `df771da`).
+Date: 2026-11-21. Branch: `main` (clean, 6 commits, HEAD `0bb96af`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -44,6 +44,13 @@ DONE this session (all committed, `git status` clean):
   - `startSession(to:hostStore:password:)` persists the updated profile
     (pin + keyTag + arch) via `HostStore.update`.
   - 12/12 tests pass (RemoteArch, SSHKeychain, HostKeyPinning).
+- **Step 3 sessions + arch** (`f44863f`): per-session connection/client
+  keyed by session UUID (no more clobbering); `disconnect(_:)` + Sessions
+  swipe; `AddHostView` authKind picker; password sheet for `.password`
+  hosts (never stored); arch persists so relaunch skips `uname -sm`.
+- **Step 4 settings** (`0bb96af`): `MoshManager` via environment from App;
+  `Status.displayText`; working "Manage SSH keys" sheet
+  (`SSHKeychain.allTags()` + delete).
 
 Known green: app builds + tests clean for simulator (Citadel 0.9.2,
 SwiftTerm 1.99.3). TOFU + Keychain verified by unit tests + typecheck only —
@@ -51,29 +58,7 @@ live-host proof deferred to step 7.
 
 ## 3. Working list to conclusion (do in order)
 
-### 3. SessionManager: N sessions + arch persistence (next up)
-File: `ios/SecureRemoteAgent/Models/AgentSession.swift`.
-- Today: single `connection`/`acp` shared across `ActiveSession`s (second
-  connect clobbers first). Partially done in step 2: updated profile
-  (pin/keyTag/arch) is now persisted via `hostStore` — the `_ = updated` and
-  `_ = s` warts are gone.
-- Implement: per-session connection+client (dictionary keyed by session UUID
-  or move into `ActiveSession`); relaunch skips `uname -sm` when
-  `lastKnownArch` known.
-- New follow-up from step 2: `AddHostView` has no authKind picker and there
-  is no password prompt UI — `.password` hosts fail cleanly (`.failed`) but
-  can't connect from the UI. Add picker + prompt before TestFlight.
-- Accept: two concurrent hosts each prompt independently; relaunch skips
-  `uname -sm` when `lastKnownArch` known.
-
-### 4. Settings: app-wide Mosh state
-File: `ios/SecureRemoteAgent/Views/SettingsView.swift:4`.
-- Today: `@State var mosh = MoshManager()` is view-local, toggle does nothing.
-- Implement: inject single `MoshManager` via environment from
-  `SecureRemoteAgentApp.swift` (same pattern as `HostStore`/`SessionManager`).
-- Accept: toggle persists for session lifetime; status line reflects probe.
-
-### 5. ACPClient hardening
+### 5. ACPClient hardening (next up)
 File: `ios/SecureRemoteAgent/Services/ACPClient.swift`.
 - Validate `initialize` result (`protocolVersion`, capabilities/auth) instead
   of `_ = result`; surface mismatch as `ACPError.protocolViolation`.
