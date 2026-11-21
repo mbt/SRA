@@ -13,7 +13,7 @@ actor ACPClient {
     private let connection: SSHConnectionManager
     private var nextId: Int = 0
     private var channel: HarnessChannel?
-    private var pending: [Int: CheckedContinuation<String, Error>] = [:]
+    private var pending: [Int: CheckedContinuation<Any, Error>] = [:]
     private var updateHandlers: [String: AsyncStream<String>.Continuation] = [:]
     private var listenTask: Task<Void, Never>?
 
@@ -36,8 +36,9 @@ actor ACPClient {
     }
 
     func newSession(cwd: String? = nil) async throws -> String {
-        var params: [String: Any] = [:]
-        if let cwd { params["cwd"] = cwd }
+        // Hermes (and ACP agents generally) require both fields; the Zig
+        // shim tolerates extras. Default cwd to /tmp when caller omits it.
+        let params: [String: Any] = ["cwd": cwd ?? "/tmp", "mcpServers": []]
         let result = try await request(method: "session/new", params: params)
         guard let sid = (result as? [String: Any])?["sessionId"] as? String else {
             throw ACPError.protocolViolation("session/new missing sessionId")
@@ -47,11 +48,18 @@ actor ACPClient {
 
     /// Send `session/prompt`, return a stream of `session/update` text chunks.
     /// Caller iterates to completion; stream finishes on prompt result.
+    /// Handlers are keyed by sessionId so concurrent prompts on different
+    /// sessions route to the right stream (Hermes + Zig shim both send
+    /// params.sessionId on every session/update notification).
     func prompt(sessionId: String, text: String) async throws -> AsyncStream<String> {
         let (stream, cont) = AsyncStream<String>.makeStream()
+        // Single active prompt per session: finish a stale handler if the
+        // caller re-prompts before the previous stream drained.
+        if let existing = updateHandlers[sessionId] {
+            existing.finish()
+        }
+        updateHandlers[sessionId] = cont
         let id = nextIdValue()
-        updateHandlers[sessionIdKey(id)] = cont
-        // Correlate prompt id -> session for demux in listenLoop.
         let params: [String: Any] = [
             "sessionId": sessionId,
             "prompt": [["type": "text", "text": text]],
@@ -59,13 +67,19 @@ actor ACPClient {
         Task {
             do {
                 _ = try await self.rawRequest(id: id, method: "session/prompt", params: params)
-                cont.finish()
             } catch {
-                cont.finish()
+                // Response errors surface as stream end; success carries
+                // stopReason in the prompt result itself.
             }
-            self.updateHandlers.removeValue(forKey: self.sessionIdKey(id))
+            await self.finishPrompt(sessionId: sessionId)
         }
         return stream
+    }
+
+    private func finishPrompt(sessionId: String) {
+        if let cont = updateHandlers.removeValue(forKey: sessionId) {
+            cont.finish()
+        }
     }
 
     func cancel(sessionId: String) async throws {
@@ -78,8 +92,6 @@ actor ACPClient {
         defer { nextId += 1 }
         return nextId
     }
-
-    private func sessionIdKey(_ id: Int) -> String { "req-\(id)" }
 
     private func request(method: String, params: [String: Any]) async throws -> Any {
         let id = nextIdValue()
@@ -117,15 +129,20 @@ actor ACPClient {
             }
             return
         }
-        // Notification: session/update -> route text chunk to stream.
+        // Notification: session/update -> route agent text to the matching
+        // session's stream. Hermes emits thought/tool/plan updates on the
+        // same method; only agent_message_chunk belongs in chat.
         if (obj["method"] as? String) == "session/update",
            let params = obj["params"] as? [String: Any],
+           let sid = params["sessionId"] as? String,
            let update = params["update"] as? [String: Any],
+           let kind = update["sessionUpdate"] as? String,
+           kind == "agent_message_chunk",
            let content = update["content"] as? [String: Any],
-           let text = content["text"] as? String
+           let text = content["text"] as? String,
+           let cont = updateHandlers[sid]
         {
-            // Fan out to the active prompt stream (scaffold: single active).
-            for cont in updateHandlers.values { cont.yield(text) }
+            cont.yield(text)
         }
     }
 }

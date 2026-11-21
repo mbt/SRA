@@ -21,7 +21,7 @@ final class SessionManager {
         var messages: [AgentMessage]
         var state: State
 
-        enum State { case connecting, deploying, ready, prompting, failed(String) }
+        enum State: Equatable { case connecting, deploying, ready, prompting, failed(String) }
     }
 
     var sessions: [ActiveSession] = []

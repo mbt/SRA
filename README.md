@@ -37,7 +37,7 @@ Manual smoke test (no iPhone needed):
 ```sh
 printf '%s\n' \
  '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
- '{"jsonrpc":"2.0","id":1,"method":"session/new","params":{}}' \
+ '{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}' \
  | ./dist/harness-$(uname -sm | awk '{print tolower($1)}')* 2>/dev/null || ./dist/harness-linux-x64
 ```
 
@@ -52,13 +52,14 @@ Copy the four `dist/harness-*` files into
 `ios/SecureRemoteAgent/Resources/Harnesses/` before archiving (wired as a
 resources build phase in `project.yml`).
 
-### 3. Wire the two TODOs
+### 3. Review the wired Citadel call sites
 
-The scaffold compiles except for two Citadel call sites deliberately left
-as single choke points (search `notImplemented`):
+`SSHConnectionManager.capture/upload/openHarnessChannel` are wired against
+Citadel 0.9.2 (shell-channel + `exec` shim for the harness stdio pipe; SFTP
+upload with truncate). Remaining before TestFlight (search `TODO`):
 
-- `SSHConnectionManager.capture/upload/openHarnessChannel` — Citadel exec + SFTP.
 - Host-key TOFU pinning + Keychain Ed25519 keygen (CryptoKit).
+- Live test against a real host — framing verified only by typecheck so far.
 
 Everything else (ACP framing, deploy flow, chat UI) is already connected.
 
@@ -80,5 +81,5 @@ way — `size-report.sh` fails the build over 300 KiB. See
 ## Status
 
 Scaffold / pre-alpha. ACP `initialize → session/new → session/prompt`
-works against the local harness binary; SSH channel wiring is the next
-milestone. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the roadmap.
+works against the local harness binary; SSH channel bodies are implemented
+against Citadel 0.9.2 and need a live-host test. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the roadmap.

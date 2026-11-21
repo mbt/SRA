@@ -29,3 +29,7 @@ ios/SecureRemoteAgent/Resources/Harnesses/harness-*
 *.pem
 *.key
 hosts.json
+
+# ---> Local notebook env (auto-created, machine-specific)
+.conda/
+SRA_*.json
