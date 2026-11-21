@@ -10,11 +10,16 @@ import Foundation
 /// Transport-agnostic: works identically over plain SSH exec today
 /// and over a Mosh-roamed channel once MoshManager lands.
 actor ACPClient {
+    /// The only ACP version this client speaks.
+    static let supportedProtocolVersion = 1
+
     private let connection: SSHConnectionManager
     private var nextId: Int = 0
     private var channel: HarnessChannel?
     private var pending: [Int: CheckedContinuation<Any, Error>] = [:]
     private var updateHandlers: [String: AsyncStream<String>.Continuation] = [:]
+    /// In-flight prompt request id per session, for `$/cancel_request`.
+    private var promptRequestIds: [String: Int] = [:]
     private var listenTask: Task<Void, Never>?
 
     init(connection: SSHConnectionManager) {
@@ -24,15 +29,70 @@ actor ACPClient {
     /// Launch remote harness and perform `initialize` handshake.
     func start(remoteHarnessPath: String) async throws {
         let ch = try await connection.openHarnessChannel(remotePath: remoteHarnessPath)
-        self.channel = ch
-        listenTask = Task { await self.listenLoop(stdout: ch.stdout) }
-        let result = try await request(method: "initialize", params: [
-            "protocolVersion": 1,
-            "clientCapabilities": ["fs": ["readTextFile": true, "writeTextFile": true], "terminal": true],
-            "clientInfo": ["name": "secure-remote-agent-ios", "title": "Secure Remote Agent", "version": "0.1.0"],
-        ])
-        // TODO: validate result.protocolVersion, negotiate capabilities/auth.
-        _ = result
+        try await start(channel: ch)
+    }
+
+    /// Drive the client over a pre-made channel (production path above, or
+    /// scripted streams in tests). Validates the `initialize` result and
+    /// fails fast on protocol mismatch.
+    func start(channel: HarnessChannel) async throws {
+        self.channel = channel
+        listenTask = Task { await self.listenLoop(stdout: channel.stdout) }
+        do {
+            let result = try await request(method: "initialize", params: [
+                "protocolVersion": Self.supportedProtocolVersion,
+                "clientCapabilities": ["fs": ["readTextFile": true, "writeTextFile": true], "terminal": true],
+                "clientInfo": ["name": "secure-remote-agent-ios", "title": "Secure Remote Agent", "version": "0.1.0"],
+            ])
+            try Self.validateInitialize(result)
+        } catch {
+            stop()
+            throw error
+        }
+    }
+
+    /// Fail-fast `initialize` validation: this client speaks exactly one
+    /// protocol version and has no `authenticate` flow, so a remote that
+    /// answers anything else is a protocol violation, not a session.
+    private static func validateInitialize(_ result: Any) throws {
+        guard let result = result as? [String: Any] else {
+            throw ACPError.protocolViolation("initialize result is not an object")
+        }
+        guard let version = result["protocolVersion"] as? Int else {
+            throw ACPError.protocolViolation("initialize result missing protocolVersion")
+        }
+        guard version == supportedProtocolVersion else {
+            throw ACPError.protocolViolation(
+                "unsupported protocolVersion \(version) (client speaks \(supportedProtocolVersion))")
+        }
+        if let authMethods = result["authMethods"] as? [Any], !authMethods.isEmpty {
+            throw ACPError.protocolViolation(
+                "remote requires authentication (\(authMethods.count) method(s)); client has no authenticate flow")
+        }
+    }
+
+    /// Shut down: end the listen loop, resume every waiter with
+    /// `.disconnected`, finish every stream. Idempotent.
+    func stop() {
+        listenTask?.cancel()
+        listenTask = nil
+        channel = nil
+        failAllPending()
+    }
+
+    /// Resume all pending requests with `.disconnected` and finish all
+    /// prompt streams. Runs on listen-loop end (channel killed) and on
+    /// explicit `stop()` — no waiter ever hangs.
+    private func failAllPending() {
+        let waiters = pending
+        pending.removeAll()
+        for cont in waiters.values {
+            cont.resume(throwing: ACPError.disconnected)
+        }
+        for (_, cont) in updateHandlers {
+            cont.finish()
+        }
+        updateHandlers.removeAll()
     }
 
     func newSession(cwd: String? = nil) async throws -> String {
@@ -60,6 +120,7 @@ actor ACPClient {
         }
         updateHandlers[sessionId] = cont
         let id = nextIdValue()
+        promptRequestIds[sessionId] = id
         let params: [String: Any] = [
             "sessionId": sessionId,
             "prompt": [["type": "text", "text": text]],
@@ -77,13 +138,33 @@ actor ACPClient {
     }
 
     private func finishPrompt(sessionId: String) {
+        promptRequestIds.removeValue(forKey: sessionId)
         if let cont = updateHandlers.removeValue(forKey: sessionId) {
             cont.finish()
         }
     }
 
-    func cancel(sessionId: String) async throws {
-        _ = try await request(method: "session/cancel", params: ["sessionId": sessionId])
+    /// Best-effort cancel: tell the remote to drop the in-flight prompt and
+    /// end the local stream. Correlated via `$/cancel_request {requestId}`
+    /// (ACP v1); the scaffold harness single-shot exec just acks it.
+    /// Never throws — cancelling a finished/unknown session is a no-op.
+    func cancel(sessionId: String) {
+        guard let channel else { return }
+        if let id = promptRequestIds.removeValue(forKey: sessionId) {
+            let notif: [String: Any] = [
+                "jsonrpc": "2.0",
+                "method": "$/cancel_request",
+                "params": ["requestId": id],
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: notif),
+               let line = String(data: data, encoding: .utf8)
+            {
+                channel.stdin.yield(line + "\n")
+            }
+        }
+        if let cont = updateHandlers.removeValue(forKey: sessionId) {
+            cont.finish()
+        }
     }
 
     // MARK: - plumbing
@@ -111,6 +192,9 @@ actor ACPClient {
     }
 
     private func listenLoop(stdout: AsyncStream<String>) async {
+        // Channel death (remote kill, SSH drop) lands here: fail every
+        // waiter so no request hangs past the transport.
+        defer { failAllPending() }
         for await line in stdout {
             handle(line: line)
         }
@@ -147,11 +231,12 @@ actor ACPClient {
     }
 }
 
-enum ACPError: Error, LocalizedError {
+enum ACPError: Error, LocalizedError, Equatable {
     case notStarted
     case encoding
     case remote(String)
     case protocolViolation(String)
+    case disconnected
 
     var errorDescription: String? {
         switch self {
@@ -159,6 +244,7 @@ enum ACPError: Error, LocalizedError {
         case .encoding: return "ACP message encoding failed"
         case .remote(let m): return "Remote error: \(m)"
         case .protocolViolation(let m): return "Protocol error: \(m)"
+        case .disconnected: return "ACP connection lost"
         }
     }
 }

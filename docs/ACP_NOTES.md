@@ -14,8 +14,9 @@ here the "subprocess" is the remote harness via SSH exec, stdio forwarded.
    Harness execs via `/bin/sh -c`, emits one `session/update` notification
    (`agent_message_chunk` + text), then the prompt result with
    `stopReason: "end_turn"`.
-4. `session/cancel` / `$/cancel_request` — acked `{ok:true}` (exec is
-   single-shot, not preemptible, in the scaffold).
+4. `$/cancel_request` — client sends the notification with `requestId` of
+   the in-flight prompt and ends the local stream immediately. The scaffold
+   harness exec is single-shot (not preemptible), so this is best-effort.
 
 ## Rules we obey
 
@@ -28,8 +29,14 @@ here the "subprocess" is the remote harness via SSH exec, stdio forwarded.
 ## Test vectors
 
 See `harness/README.md` for the `printf … | harness` manual test.
-iOS side: `ACPClient` ids increment from 0; correlate prompt results by id,
-stream chunks via `session/update` fan-out until the result arrives.
+iOS side: `ACPClient` ids increment from 0; prompt results correlate by id.
+`session/update` notifications route by `params.sessionId` to that session's
+stream, and only `agent_message_chunk` updates reach chat (thought/tool
+chunks are dropped). Transport death fails every pending request with
+`ACPError.disconnected` and finishes all streams — no waiter hangs.
+`initialize` is validated fail-fast: the client speaks exactly
+`protocolVersion` 1 and has no `authenticate` flow, so version mismatch or a
+non-empty `authMethods` surfaces as `ACPError.protocolViolation`.
 
 ## Extending
 
