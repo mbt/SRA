@@ -1,6 +1,6 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 8 commits, HEAD `ad54836`).
+Date: 2026-11-21. Branch: `main` (clean, 10 commits, HEAD `435f539`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -63,9 +63,14 @@ live-host proof deferred to step 7.
   (non-throwing); `start(channel:)` seam + 6 scripted-channel tests —
   18/18 green. `docs/ACP_NOTES.md` updated.
 
+- **Step 6 HarnessDeployer** (`435f539`): sha256 remote check
+  (`sha256sum`/`shasum` fallback) skips SFTP when hashes match; `upload`
+  `Data` overload; `pruneOldVersions` with traversal-safe filter; 6 new
+  helper tests — 24/24 green.
+
 ## 3. Working list to conclusion (do in order)
 
-### 6. HarnessDeployer skip-upload + version hygiene (next up)
+### 7. Live-host validation (next up — the one thing typecheck can't prove)
 File: `ios/SecureRemoteAgent/Services/ACPClient.swift`.
 - Validate `initialize` result (`protocolVersion`, capabilities/auth) instead
   of `_ = result`; surface mismatch as `ACPError.protocolViolation`.
