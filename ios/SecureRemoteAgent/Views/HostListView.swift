@@ -19,7 +19,7 @@ struct HostListView: View {
                     }
                     Spacer()
                     Button("Connect") {
-                        Task { await sessions.startSession(to: host) }
+                        Task { await sessions.startSession(to: host, hostStore: store) }
                     }
                     .buttonStyle(.borderedProminent)
                 }

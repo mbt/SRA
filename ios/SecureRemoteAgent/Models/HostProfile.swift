@@ -11,6 +11,9 @@ struct HostProfile: Identifiable, Codable, Hashable, Sendable {
     /// "ed25519" | "ecdsa" | "password" — key reference lives in Keychain.
     var authKind: AuthKind = .ed25519
     var keyTag: String? // Keychain tag for the private key
+    /// TOFU-pinned host key, OpenSSH "algorithm base64-blob" string.
+    /// nil = never connected; pinned on first successful connect.
+    var pinnedHostKey: String?
     var lastKnownArch: RemoteArch?
 
     enum AuthKind: String, Codable, Sendable {

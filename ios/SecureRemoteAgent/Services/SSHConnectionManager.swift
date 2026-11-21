@@ -1,6 +1,7 @@
 import Foundation
 import Citadel
 import NIO
+import NIOSSH
 
 /// Thin wrapper around Citadel's SSHClient.
 /// Primary transport: SSH exec channel running the harness with stdio
@@ -18,27 +19,72 @@ actor SSHConnectionManager {
     private let clientBox = ClientBox()
     private var hostProfile: HostProfile?
 
-    /// Connect with public-key (Keychain) or password auth.
-    /// Host-key verification: pinned fingerprint stored per host (TODO).
-    func connect(host: HostProfile) async throws {
-        self.hostProfile = host
-        // NOTE: fill Keychain lookup + host-key pinning before TestFlight.
-        // This scaffold connects with password or Keychain key via Citadel.
+    /// Connect with Keychain-backed public-key or password auth.
+    ///
+    /// Host-key verification is trust-on-first-use: the presented key is
+    /// pinned to the profile on first connect and enforced afterwards —
+    /// a changed key fails with `SSHError.hostKeyMismatch`.
+    ///
+    /// - Returns: the profile with `pinnedHostKey`/`keyTag` filled in.
+    ///   The caller persists it (e.g. `HostStore.update`).
+    func connect(host: HostProfile, password: String? = nil) async throws -> HostProfile {
+        var updated = host
+        let authMethod: SSHAuthenticationMethod
+        switch host.authKind {
+        case .password:
+            // No empty-password path: password auth requires a password.
+            guard let password, !password.isEmpty else { throw SSHError.authFailed }
+            authMethod = .passwordBased(username: host.username, password: password)
+        case .ed25519:
+            let tag = host.keyTag ?? Self.defaultKeyTag(for: host)
+            do {
+                // swift-crypto's Curve25519 typealiases CryptoKit on Apple
+                // platforms, so the Keychain-loaded key passes straight in.
+                let key = try SSHKeychain.loadOrGenerateEd25519(tag: tag)
+                authMethod = .ed25519(username: host.username, privateKey: key)
+            } catch {
+                throw SSHError.authFailed
+            }
+            updated.keyTag = tag
+        case .ecdsa:
+            let tag = host.keyTag ?? Self.defaultKeyTag(for: host)
+            do {
+                let key = try SSHKeychain.loadOrGenerateP256(tag: tag)
+                authMethod = .p256(username: host.username, privateKey: key)
+            } catch {
+                throw SSHError.authFailed
+            }
+            updated.keyTag = tag
+        }
+
         // Citadel 0.9.2 has no SSHClientSettings (added upstream later);
         // connect parameters are passed directly.
-        let client = try await SSHClient.connect(
-            host: host.host,
-            port: host.port,
-            authenticationMethod: {
-                // Placeholder: replace with Keychain-backed key material.
-                // .ed25519/.rsa/.p256/.p384/.p521(username:privateKey:)
-                // take the corresponding swift-crypto key type.
-                SSHAuthenticationMethod.passwordBased(username: host.username, password: "")
-            }(),
-            hostKeyValidator: .acceptAnything(), // TODO: pin on first use
-            reconnect: .never
-        )
-        self.clientBox.client = client
+        let tofu = TOFUHostKeyValidator(expected: host.pinnedHostKey)
+        do {
+            let client = try await SSHClient.connect(
+                host: host.host,
+                port: host.port,
+                authenticationMethod: authMethod,
+                hostKeyValidator: .custom(tofu),
+                reconnect: .never
+            )
+            self.clientBox.client = client
+        } catch {
+            // Our validator is the only source of InvalidHostKey, but the
+            // error may arrive wrapped — trust the recorded rejection flag.
+            if tofu.didReject { throw SSHError.hostKeyMismatch }
+            throw error
+        }
+        if updated.pinnedHostKey == nil {
+            updated.pinnedHostKey = tofu.seenHostKey
+        }
+        self.hostProfile = updated
+        return updated
+    }
+
+    /// Stable Keychain tag for hosts created before `keyTag` existed.
+    private static func defaultKeyTag(for host: HostProfile) -> String {
+        "host-\(host.id.uuidString)"
     }
 
     /// Run a one-shot command, capture combined output. Used for
@@ -205,6 +251,55 @@ private final class ClientBox: @unchecked Sendable {
 private final class WriterBox: @unchecked Sendable {
     let writer: TTYStdinWriter
     init(_ writer: TTYStdinWriter) { self.writer = writer }
+}
+
+/// Trust-on-first-use host-key validator for Citadel 0.9.2.
+///
+/// Citadel calls `validateHostKey` on the NIO event loop during the
+/// handshake, so this cannot touch actor state: the expected pin is fixed
+/// at construction, and the outcome is recorded in a locked box the actor
+/// reads after `connect` returns/throws.
+private final class TOFUHostKeyValidator: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
+    private let expected: String?
+    private let lock = NSLock()
+    private var _seen: String?
+    private var _rejected = false
+
+    init(expected: String?) { self.expected = expected }
+
+    /// OpenSSH string of the key the server presented (nil if none seen).
+    var seenHostKey: String? {
+        lock.lock(); defer { lock.unlock() }
+        return _seen
+    }
+
+    /// True when the presented key did not match the pin.
+    var didReject: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _rejected
+    }
+
+    func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
+        let presented = String(openSSHPublicKey: hostKey)
+        lock.lock()
+        _seen = presented
+        let ok = HostKeyPinning.matches(expected: expected, presented: presented)
+        if !ok { _rejected = true }
+        lock.unlock()
+        if ok {
+            validationCompletePromise.succeed(())
+        } else {
+            validationCompletePromise.fail(TOFUError.keyMismatch)
+        }
+    }
+}
+
+/// Rejection from `TOFUHostKeyValidator`. The actor maps this to
+/// `SSHError.hostKeyMismatch` via the validator's `didReject` flag rather
+/// than by catching (Citadel's own `InvalidHostKey` has no public
+/// initializer, and handshake errors may arrive wrapped).
+private enum TOFUError: Error {
+    case keyMismatch
 }
 
 /// Bidirectional stdio to the remote harness process.

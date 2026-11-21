@@ -28,22 +28,22 @@ final class SessionManager {
     var connection: SSHConnectionManager?
     var acp: ACPClient?
 
-    func startSession(to host: HostProfile) async {
-        var s = ActiveSession(id: UUID(), host: host, acpSessionId: nil, messages: [], state: .connecting)
+    func startSession(to host: HostProfile, hostStore: HostStore? = nil, password: String? = nil) async {
+        let s = ActiveSession(id: UUID(), host: host, acpSessionId: nil, messages: [], state: .connecting)
         sessions.append(s)
         guard let idx = sessions.firstIndex(where: { $0.id == s.id }) else { return }
 
         do {
             let conn = SSHConnectionManager()
             self.connection = conn
-            try await conn.connect(host: host)
+            let connected = try await conn.connect(host: host, password: password)
             sessions[idx].state = .deploying
 
             let deployer = HarnessDeployer(connection: conn)
             let arch = try await deployer.ensureHarness(host: host)
-            var updated = host
+            var updated = connected
             updated.lastKnownArch = arch
-            _ = updated
+            hostStore?.update(updated)
 
             sessions[idx].state = .ready
             let client = ACPClient(connection: conn)
@@ -55,7 +55,6 @@ final class SessionManager {
         } catch {
             sessions[idx].state = .failed(error.localizedDescription)
         }
-        _ = s
     }
 
     func sendPrompt(_ text: String, in sessionId: UUID) async {
