@@ -1,6 +1,6 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 10 commits, HEAD `435f539`).
+Date: 2026-11-21. Branch: `main` (clean, 11 commits, HEAD `6927249`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -13,7 +13,7 @@ zig version                    # need 0.17.x
 make test && make sizes        # harness unit tests + 300 KiB gate
 cd ios && xcodegen generate
 xcodebuild -project SecureRemoteAgent.xcodeproj -scheme SecureRemoteAgent \
-  -destination 'platform=iOS Simulator,name=iPhone 17' test  # expect TEST SUCCEEDED (12 tests)
+  -destination 'platform=iOS Simulator,name=iPhone 17' test  # expect TEST SUCCEEDED (24 tests)
 ```
 
 Hermes reference (installed `0.23.1` at `~/.local/bin/hermes`):
@@ -67,32 +67,15 @@ live-host proof deferred to step 7.
   (`sha256sum`/`shasum` fallback) skips SFTP when hashes match; `upload`
   `Data` overload; `pruneOldVersions` with traversal-safe filter; 6 new
   helper tests — 24/24 green.
+- **Size gate pre-check**: `make test` (Zig) passes; `size-report.sh` shows
+  all four harness binaries 174–199 KB (< 300 KiB). Re-run before archive.
 
 ## 3. Working list to conclusion (do in order)
 
 ### 7. Live-host validation (next up — the one thing typecheck can't prove)
-File: `ios/SecureRemoteAgent/Services/ACPClient.swift`.
-- Validate `initialize` result (`protocolVersion`, capabilities/auth) instead
-  of `_ = result`; surface mismatch as `ACPError.protocolViolation`.
-- Fail all `pending` continuations on disconnect/`listenLoop` end (today they
-  hang if channel drops mid-request).
-- Wire `cancel(sessionId:)` to `$/cancel_request` correlation if harness ever
-  becomes preemptible (today scaffold ACKs `{ok:true}`).
-- Update `docs/ACP_NOTES.md` (still describes old fan-out).
-- Accept: bad-protocol remote fails fast with clear error; killing channel
-  resumes every waiter with error, no hangs.
-
-### 6. HarnessDeployer: skip-upload + version hygiene
-File: `ios/SecureRemoteAgent/Services/HarnessDeployer.swift:45-58`.
-- Add `sha256sum` remote check before SFTP; skip upload when hashes match.
-- Keep versioned `remotePath` (`bundleVersion`), prune old versions on
-  success.
-- Accept: second connect uploads 0 bytes; `chmod +x` still applied after
-  fresh upload.
-
-### 7. Live-host validation (the one thing typecheck can't prove)
-File: `SSHConnectionManager.swift` (`withTTY` + `exec` shim; Citadel
-0.9.2 has no public exec-with-stdio primitive).
+File: `ios/SecureRemoteAgent/Services/SSHConnectionManager.swift`
+(`withTTY` + `exec` shim; Citadel 0.9.2 has no public exec-with-stdio
+primitive).
 - Risk: PTY `\r\n` translation/echo breaks `\n`-framing in `carry` split.
 - Test against a real host: `capture("uname -sm")` → `ensureHarness` →
   `start` → `newSession` → `prompt("echo ok")` returns exactly `ok` with no
@@ -123,7 +106,7 @@ scripts/build-harness.sh && scripts/size-report.sh  # all 4 < 300 KiB
 - Accept: gate green, `ls -lh dist ios/.../Harnesses` agree.
 
 ### 10. TestFlight checklist
-- Steps 0–9 green, `git status` clean, version bump (`bundleVersion` +
+- All steps green, `git status` clean, version bump (`bundleVersion` +
   `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` in `project.yml`).
 - Archive on a real device target, install via TestFlight, connect to one
   macOS + one Linux host, one prompt each.
@@ -142,6 +125,11 @@ scripts/build-harness.sh && scripts/size-report.sh  # all 4 < 300 KiB
   across runs, so never use fixed tags in tests.
 - `environment.yml` + `.conda/` are notebook-tooling artifacts, not project
   files (`environment.yml` is committed, `.conda/` ignored). Leave alone.
+- 2026-11-21: the index picked up an unmerged state on `AgentSession.swift` /
+  `HostListView.swift` with no `MERGE_HEAD` (external tooling). The `theirs`
+  side was stale pre-step-3 code; resolved in favor of ours, verified
+  marker-free, tests green. If it recurs, `git ls-files -u` to inspect and
+  re-resolve the same way — no committed history was affected.
 
 ## 5. Explicitly out of scope (do NOT start)
 
