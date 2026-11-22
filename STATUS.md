@@ -69,23 +69,35 @@ live-host proof deferred to step 7.
   helper tests — 24/24 green.
 - **Size gate pre-check**: `make test` (Zig) passes; `size-report.sh` shows
   all four harness binaries 174–199 KB (< 300 KiB). Re-run before archive.
+- **Step 7 live-host validation** (this commit): REAL SSH server — dropbear
+  2026.94 in user-mode on 127.0.0.1:23456 with scratch host key +
+  authorized_keys (no system sshd or `~/.ssh` changes) via
+  `scripts/live-server-setup.sh`; driver `scripts/live-validation.py`
+  replays the app's exact flows (exec-channel `capture`, sha/SFTP deploy +
+  chmod + skip-on-match, `withTTY`-equivalent shell channel + `exec`
+  bootstrap, NDJSON protocol, TOFU pin/tamper). **27/27 checks green**
+  (exit 0), transcript `docs/LIVE_2026-11-21.md` + byte-level `.raw.txt`.
+  Findings:
+  1. `withTTY` sends `shell` WITHOUT a pty-req — the feared `\r\n`/ECHO
+     PTY mangling cannot occur on the harness path. 0 `\r` bytes in the
+     whole stream, 0 shell noise lines, 26 exact prompt round trips,
+     64 KiB output intact as one session/update chunk. No Citadel ≥0.10
+     migration needed (harness-side `\\r` trim stays as defense).
+  2. SFTP paths live-verified: `SSHConnectionManager.upload` strips `~/`
+     to home-RELATIVE (sftp-servers resolve from login home); driver now
+     matches that byte-for-byte.
+  3. Reconnect skip-upload live-verified: sha equal → 0 bytes transferred.
+  4. Tampered hostkey pin → connection refused, fail-closed (strict).
+     Kernel gotcha: unattended `ssh` here defaults to
+     `UpdateHostKeys=accept-new`, so pin/mismatch tests must force
+     `StrictHostKeyChecking=yes` + `UpdateHostKeys=no` (the app's TOFU via
+     Citadel custom validator does the equivalent).
+  Same-session pre-flight: `xcodebuild test` → TEST SUCCEEDED
+  (24 tests, 5 suites); no app code was touched this step.
 
 ## 3. Working list to conclusion (do in order)
 
-### 7. Live-host validation (next up — the one thing typecheck can't prove)
-File: `ios/SecureRemoteAgent/Services/SSHConnectionManager.swift`
-(`withTTY` + `exec` shim; Citadel 0.9.2 has no public exec-with-stdio
-primitive).
-- Risk: PTY `\r\n` translation/echo breaks `\n`-framing in `carry` split.
-- Test against a real host: `capture("uname -sm")` → `ensureHarness` →
-  `start` → `newSession` → `prompt("echo ok")` returns exactly `ok` with no
-  framing errors over ≥20 prompts and a 64 KiB output. Also confirms TOFU
-  pin/mismatch against a real host key.
-- If PTY mangles framing, migrate to Citadel ≥0.10 exec-with-stdio or strip
-  `\r` + disable echo in the shim command.
-- Accept: recorded transcript of the above in PR/commit message.
-
-### 8. Docs + threat model (before TestFlight)
+### 8. Docs + threat model (next up — before TestFlight)
 - `README.md`: add threat-model paragraph — harness is intentional RCE
   (`harness/src/agent.zig` `/bin/sh -c`), no auth gate
   (`authMethods:[]`); anyone with SSH access gets shell. State mitigations
@@ -125,6 +137,15 @@ scripts/build-harness.sh && scripts/size-report.sh  # all 4 < 300 KiB
   across runs, so never use fixed tags in tests.
 - `environment.yml` + `.conda/` are notebook-tooling artifacts, not project
   files (`environment.yml` is committed, `.conda/` ignored). Leave alone.
+- Live validation fakery: `scripts/live-server-setup.sh` (dropbear
+  user-mode; `brew install dropbear`) + `scripts/live-validation.py`
+  (std-lib only, run from repo root). The driver's *second* run will take
+  the sha-match skip path — delete
+  `~/.secure-remote-agent/harness-<slug>` on the host first if you want
+  the fresh-upload path in the transcript again.
+- dropbear host keys are dropbear-format, not OpenSSH format — `ssh-keygen
+  -lf` can't read them; take the host fingerprint from the pinned
+  known_hosts after first connect (driver phase 4 does).
 - 2026-11-21: the index picked up an unmerged state on `AgentSession.swift` /
   `HostListView.swift` with no `MERGE_HEAD` (external tooling). The `theirs`
   side was stale pre-step-3 code; resolved in favor of ours, verified
@@ -147,3 +168,6 @@ ACP v2 draft.
 - State: `ios/.../Models/AgentSession.swift`, `.../Models/HostProfile.swift`
 - UI: `ios/.../Views/{Content,HostList,Session,Settings}View.swift`
 - Project: `ios/project.yml`, `Makefile`, `scripts/*`, `docs/*`
+- Live validation: `scripts/live-server-setup.sh` (throwaway dropbear
+  host), `scripts/live-validation.py` (driver),
+  `docs/LIVE_<date>.md` + `.raw.txt` (transcripts)
