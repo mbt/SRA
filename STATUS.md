@@ -118,19 +118,21 @@ live-host proof deferred to step 7.
   (`stdout`=JSON only, banner+logs=stderr). Both smoke tests re-run
   here exactly as documented: exit 0.
 
+- **Step 9 size + matrix gate** (this session, commit follows):
+  `scripts/build-harness.sh` now mirrors `dist/` →
+  `ios/SecureRemoteAgent/Resources/Harnesses/` after every build and
+  verifies byte-for-byte (`cmp`); dist is the single source of truth.
+  Fixed a latent bug: `scripts/build-harness.sh` invoked
+  `scripts/size-report.sh` via a path relative to the post-`cd` harness/
+  dir (always "No such file") — now uses `$REPO_ROOT`. Gate green:
+  darwin-arm64 199 KB, darwin-x64 174 KB, linux-arm64 184 KB,
+  linux-x64 192 KB (all < 300 KiB). dist vs Resources/Harnesses
+  sha256-identical for all four. `make test` green (Zig), `xcodebuild
+  build` BUILD SUCCEEDED with the freshly mirrored resources.
+
 ## 3. Working list to conclusion (do in order)
 
-### 9. Size + matrix gate (next up)
-```sh
-scripts/build-harness.sh && scripts/size-report.sh  # all 4 < 300 KiB
-```
-- Copy `dist/harness-*` into
-  `ios/SecureRemoteAgent/Resources/Harnesses/` before archive (build phase
-  already wired in `project.yml`; today both copies exist and drift —
-  make `dist/` the single source of truth).
-- Accept: gate green, `ls -lh dist ios/.../Harnesses` agree.
-
-### 10. TestFlight checklist
+### 10. TestFlight checklist (next up)
 - All steps green, `git status` clean, version bump (`bundleVersion` +
   `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` in `project.yml`).
 - Archive on a real device target, install via TestFlight, connect to one

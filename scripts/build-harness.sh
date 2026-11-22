@@ -3,6 +3,7 @@
 # Usage: scripts/build-harness.sh [out-dir]
 # Default: ReleaseSmall into dist/ in repo root.
 set -eu
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 OUT="${1:-dist}"
 cd "$(dirname "$0")/../harness"
@@ -28,6 +29,26 @@ build_one "darwin-x64" "x86_64-macos"
 build_one "linux-x64" "x86_64-linux-musl"
 build_one "linux-arm64" "aarch64-linux-musl"
 
-echo "--- sizes ---"
-ls -lh "../$OUT"/harness-*
-"$(dirname "$0")/size-report.sh" "../$OUT"
+# Single source of truth: dist/ is authoritative; mirror into the iOS
+# resources dir so the Xcode bundle always ships exactly what was built
+# (both paths are gitignored — only the build produces them).
+IOS_RES="../ios/SecureRemoteAgent/Resources/Harnesses"
+if [ -d "../ios/SecureRemoteAgent" ]; then
+  mkdir -p "$IOS_RES"
+  for f in "../$OUT"/harness-*; do
+    [ -e "$f" ] || continue
+    cp "$f" "$IOS_RES/$(basename "$f")"
+  done
+  # Verify byte-for-byte equality (catches drift before archive).
+  for f in "../$OUT"/harness-*; do
+    [ -e "$f" ] || continue
+    b=$(basename "$f")
+    if ! cmp -s "$f" "$IOS_RES/$b"; then
+      echo "ERROR: $b differs between $OUT and $IOS_RES" >&2
+      exit 1
+    fi
+  done
+  echo "Mirrored $OUT -> $IOS_RES (sha-identical)."
+fi
+
+"$REPO_ROOT/scripts/size-report.sh" "../$OUT"
