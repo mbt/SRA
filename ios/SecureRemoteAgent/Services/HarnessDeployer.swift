@@ -15,7 +15,7 @@ import Foundation
 /// Binaries are tiny by design (Zig ReleaseSmall, static musl on Linux).
 actor HarnessDeployer {
     static let remoteDir = "~/.secure-remote-agent"
-    static let bundleVersion = "0.1.0" // bump with harness releases
+    static let bundleVersion = "0.2.0" // bump with harness releases
 
     let connection: SSHConnectionManager
 

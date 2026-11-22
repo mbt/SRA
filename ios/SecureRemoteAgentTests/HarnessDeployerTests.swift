@@ -16,8 +16,8 @@ struct HarnessDeployerTests {
     }
 
     @Test func fileNameIsVersioned() {
-        #expect(HarnessDeployer.fileName(for: .darwinArm64) == "harness-darwin-arm64-0.1.0")
-        #expect(HarnessDeployer.fileName(for: .linuxX64) == "harness-linux-x64-0.1.0")
+        #expect(HarnessDeployer.fileName(for: .darwinArm64) == "harness-darwin-arm64-\(HarnessDeployer.bundleVersion)")
+        #expect(HarnessDeployer.fileName(for: .linuxX64) == "harness-linux-x64-\(HarnessDeployer.bundleVersion)")
     }
 
     @Test func staleEntriesKeepsCurrentAndOthers() {

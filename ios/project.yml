@@ -46,8 +46,8 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.secureremote.agent
-        MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: 2
         ENABLE_USER_SCRIPT_SANDBOXING: true
     dependencies:
       - package: Citadel
