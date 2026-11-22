@@ -20,8 +20,9 @@ older toolchains also fail to link on current macOS, verified 0.14–0.16).
 ## Build
 
 ```sh
-zig build -Doptimize=ReleaseSmall   # host binary -> zig-out/bin/
-zig build test                      # unit tests
+zig build                         # host binary -> zig-out/bin/ (ReleaseSmall
+                                  # is the default; size gate: see below)
+zig build test                    # unit tests
 ```
 
 Cross-compile all shipped targets (see `../scripts/build-harness.sh`):
@@ -53,16 +54,28 @@ Tips if it grows:
 
 ## Manual test (no iOS needed)
 
+All requests must go into **one process** — `session/new` and
+`session/prompt` only see sessions created in the same invocation, and
+the harness answers queued lines before exiting on EOF:
+
 ```sh
-zig build -Doptimize=ReleaseSmall
+zig build
 printf '%s\n' \
- '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0"}}}' \
- '{"jsonrpc":"2.0","id":1,"method":"session/new","params":{}}' \
-  | ./zig-out/bin/secure-remote-harness
-# copy sessionId, then:
-printf '%s\n' \
- '{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"ses_...","prompt":[{"type":"text","text":"uname -sm"}]}}' \
+ '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' \
+ '{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}' \
+ '{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"ses_1","prompt":[{"type":"text","text":"uname -sm"}]}}' \
   | ./zig-out/bin/secure-remote-harness
 ```
 
-stdout must contain only JSON lines; logs go to stderr.
+Notes:
+- session ids are sequential per process: the first `session/new`
+  always returns `ses_1` on a fresh run (used above).
+- `session/new` params **must contain both `cwd` and `mcpServers`** for
+  Hermes-strict clients — the harness ignores their values but Hermes
+  rejects `{}` or a missing key. Always send
+  `{"cwd":"/tmp","mcpServers":[]}`-shaped params.
+- stdout must contain only JSON lines; logs (including the
+  `secure-remote-harness … ready` banner) go to stderr. EOF on stdin
+  exits the harness cleanly after answering everything in flight.
+- To work against a *cross-compiled* binary, run the same pipeline
+  against `../dist/harness-<slug>` instead of `zig-out/bin/…`.

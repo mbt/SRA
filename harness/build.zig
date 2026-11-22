@@ -27,7 +27,8 @@ pub fn build(b: *std.Build) void {
     });
 
     // `zig build`            -> host binary in zig-out/bin
-    // `zig build -Doptimize=ReleaseSmall` (default) keeps it tiny.
+    // (ReleaseSmall is the default via preferred_optimize_mode above;
+    //  0.17 syntax for explicit override is `--release=small`.)
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

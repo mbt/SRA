@@ -9,7 +9,10 @@ here the "subprocess" is the remote harness via SSH exec, stdio forwarded.
 1. `initialize` — client sends `protocolVersion: 1`, `clientCapabilities`
    (`fs.readTextFile/writeTextFile`, `terminal`), `clientInfo`. Harness
    replies with its version, `agentCapabilities`, `agentInfo`, `authMethods: []`.
-2. `session/new` — optional `cwd`/`mcpServers`. Harness returns `sessionId`.
+2. `session/new` — params must be an object carrying `cwd` (string) and
+   `mcpServers` (array): Hermes-strict clients reject missing keys, so
+   `ACPClient` always sends `{"cwd":…,"mcpServers":[]}`. This harness
+   accepts and ignores both fields. Returned: `sessionId`.
 3. `session/prompt` — `{"sessionId","prompt":[{"type":"text","text":"…"}]}`.
    Harness execs via `/bin/sh -c`, emits one `session/update` notification
    (`agent_message_chunk` + text), then the prompt result with
