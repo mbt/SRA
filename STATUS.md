@@ -1,7 +1,8 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 13 commits, delivered work HEAD
-`ab0da44`).
+Date: 2026-11-21. Branch: `main` (clean, 15 commits — next session sees
+this number +1, ending with the commit that touches this file; step-8
+deliverables HEAD `27df55f`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -96,19 +97,30 @@ live-host proof deferred to step 7.
   Same-session pre-flight: `xcodebuild test` → TEST SUCCEEDED
   (24 tests, 5 suites); no app code was touched this step.
 
+- **Step 8 docs + threat model** (this session, commit follows): full
+  **Security & threat model** section in `README.md` — boundary of trust
+  is the SSH account (prompt text is a shell command, `authMethods:[]`
+  by design), mitigations (Keychain auth, TOFU fail-closed, deploy
+  hygiene, pty-less channel), no-sandbox caveat, one-sentence RCE
+  statement. `docs/ACP_NOTES.md`: Hermes-strict `session/new` params
+  documented. `harness/README.md`: manual test fixed (was a **two-process
+  test that silently fails** — sessions live in one process; now one
+  invocation with `ses_1`), Zig-0.17 syntax fix (`zig build` plain —
+  `-Doptimize=` no longer exists; ReleaseSmall is the default), stderr
+  banner documented. Root README smoke test: one invocation, explicit
+  `case "$uname -sm"` arch selection, live-verification section (dropbear
+  + `live-validation.py`), status updated. Also fixed the stale
+  zig-0.14/0.15 comment in `build.zig`. **Acceptance**: run by an
+  independent agent that read only the docs, no code or conversation —
+  ran the smoke test verbatim (exit 0, correct JSON sequence) and wrote
+  an accurate RCE-boundary paragraph from the docs alone; only
+  observation (readiness banner) checked as stderr, confirmed
+  (`stdout`=JSON only, banner+logs=stderr). Both smoke tests re-run
+  here exactly as documented: exit 0.
+
 ## 3. Working list to conclusion (do in order)
 
-### 8. Docs + threat model (next up — before TestFlight)
-- `README.md`: add threat-model paragraph — harness is intentional RCE
-  (`harness/src/agent.zig` `/bin/sh -c`), no auth gate
-  (`authMethods:[]`); anyone with SSH access gets shell. State mitigations
-  (TOFU + Keychain now implemented, no password default).
-- `docs/ACP_NOTES.md`: document Hermes-strict `session/new` + chunk filter.
-- `harness/README.md`: update manual test to Hermes-compatible params.
-- Accept: a new agent reading only docs can run the smoke test and state the
-  RCE boundary.
-
-### 9. Size + matrix gate
+### 9. Size + matrix gate (next up)
 ```sh
 scripts/build-harness.sh && scripts/size-report.sh  # all 4 < 300 KiB
 ```
