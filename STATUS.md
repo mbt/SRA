@@ -127,21 +127,30 @@ live-host proof deferred to step 7.
   darwin-arm64 199 KB, darwin-x64 174 KB, linux-arm64 184 KB,
   linux-x64 192 KB (all < 300 KiB). dist vs Resources/Harnesses
   sha256-identical for all four. `make test` green (Zig), `xcodebuild
-- **Step 10 TestFlight checklist**: deferred by user (2026-11-21). All
-  automatable prerequisites green; version bump + archive + TestFlight
-  upload + two-host transcript left to the release cut.
+- **Step 10 TestFlight checklist (partial)**: version bump done
+  (`9fe23c8`, 0.2.0 / build 2). Archive blocked — no Apple Developer
+  account/profile in Xcode; manual steps (sign-in, profile, archive,
+  TestFlight upload, device install, two-host transcript) left to owner.
 
 ## 3. Working list to conclusion (do in order)
 
-### 10. TestFlight checklist (deferred by user — 2026-11-21)
+### 10. TestFlight checklist (partial — 2026-11-21)
 
-User elected to handle TestFlight upload, device install, and the
-two-host transcript manually. All automatable prerequisites are green:
-steps 0–9 done, `git status` clean, `make test` + `make sizes` green,
-`xcodebuild test` 24/24, live validation 27/27. Version bump
-(`bundleVersion` + `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` in
-`project.yml`) is left to the release cut. Re-open this step when
-ready to archive.
+Version bump done (`9fe23c8`): `MARKETING_VERSION` 0.2.0,
+`CURRENT_PROJECT_VERSION` 2, `HarnessDeployer.bundleVersion` 0.2.0
+(tests updated to track the constant). `xcodebuild test` 24/24 green
+after the bump.
+
+**Archive blocked**: no Apple Developer account/provisioning profile is
+configured in Xcode (keychain holds the dev identity
+`Apple Development: superfloppies@duck.com` but no team account), so
+`-allowProvisioningUpdates` cannot generate a profile and the generic-
+device archive fails with "No Account for Team". Manual steps remaining
+for the owner: sign in to Xcode → Settings → Accounts, create/select a
+provisioning profile for `com.secureremote.agent`, then run
+`xcodebuild archive … -allowProvisioningUpdates`, upload the .xcarchive
+to App Store Connect / TestFlight, install on a real device, and capture
+a two-host transcript (one macOS + one Linux host, one prompt each).
 
 ## 4. Notes / gotchas for the next agent
 
