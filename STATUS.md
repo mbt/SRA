@@ -1,6 +1,7 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 11 commits, HEAD `6927249`).
+Date: 2026-11-21. Branch: `main` (clean, 13 commits, delivered work HEAD
+`ab0da44`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
