@@ -1,8 +1,7 @@
 # STATUS — SecureRemoteAgent (resume here next session)
 
-Date: 2026-11-21. Branch: `main` (clean, 15 commits — next session sees
-this number +1, ending with the commit that touches this file; step-8
-deliverables HEAD `27df55f`).
+Date: 2026-11-21. Branch: `main` (clean — final session commit follows;
+step-8 deliverables `27df55f`, step-9 `be600fe`).
 Scope terminus: **Phase-1 SSH path TestFlight-ready. Mosh UDP, SwiftTerm tab,
 LLM bridge stay out of scope** (see §5).
 
@@ -128,16 +127,21 @@ live-host proof deferred to step 7.
   darwin-arm64 199 KB, darwin-x64 174 KB, linux-arm64 184 KB,
   linux-x64 192 KB (all < 300 KiB). dist vs Resources/Harnesses
   sha256-identical for all four. `make test` green (Zig), `xcodebuild
-  build` BUILD SUCCEEDED with the freshly mirrored resources.
+- **Step 10 TestFlight checklist**: deferred by user (2026-11-21). All
+  automatable prerequisites green; version bump + archive + TestFlight
+  upload + two-host transcript left to the release cut.
 
 ## 3. Working list to conclusion (do in order)
 
-### 10. TestFlight checklist (next up)
-- All steps green, `git status` clean, version bump (`bundleVersion` +
-  `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` in `project.yml`).
-- Archive on a real device target, install via TestFlight, connect to one
-  macOS + one Linux host, one prompt each.
-- Accept: two-host transcript attached to release notes.
+### 10. TestFlight checklist (deferred by user — 2026-11-21)
+
+User elected to handle TestFlight upload, device install, and the
+two-host transcript manually. All automatable prerequisites are green:
+steps 0–9 done, `git status` clean, `make test` + `make sizes` green,
+`xcodebuild test` 24/24, live validation 27/27. Version bump
+(`bundleVersion` + `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` in
+`project.yml`) is left to the release cut. Re-open this step when
+ready to archive.
 
 ## 4. Notes / gotchas for the next agent
 
